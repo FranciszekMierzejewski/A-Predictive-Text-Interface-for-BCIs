@@ -22,7 +22,7 @@ Result: I lik_
 # -- CONFIG
 # experiment vars
 TARGET = ""
-REPETITON_COUNT = 10 # Max flashes per row/col
+REPETITION_COUNT = 10 # Max flashes per row/col
 FLASH_MS = 100 # Flash duration
 ISI_MS = 75 # Stimulus onset asynchrony (SOA) of 175
 CUE_MS = 1000 # How long instruction should be displayed, to focus on certain char
@@ -119,3 +119,50 @@ def create_lines(matrix):
         })
 
     return lines
+
+
+def permutation(flashing_lines, repetition_count: int = REPETITION_COUNT, minimum_gap: int = 6):
+    """
+    pseudo-random order, 6 intervening flashes before same cell flashes again
+    """
+    flash_order = []
+    last_flash = {} # cell name is most recent flash
+    flash_index = 0 # count of flashes
+
+    for rep in range(repetition_count):
+        lines_remaining = flashing_lines[:] # shallow copy, remove without modifying original
+
+        while lines_remaining:
+            candidates = []
+
+            for line in lines_remaining:
+                is_eligible = True
+
+                # Find every remaining line that have cells with a large enough gap since last intensification
+                for cell_name in line['names']:
+                    previous_flash = last_flash.get(cell_name)
+
+                    if (
+                        previous_flash is not None and flash_index - previous_flash <= minimum_gap # empty safety and gap check
+                    ):
+                        is_eligible = False
+                        break
+
+                if is_eligible:
+                    candidates.append(line)
+
+            # Safety check, if for example one line left that has < min gap, flash to gracefully terminate
+            if not candidates:
+                candidates = lines_remaining
+
+            selected_line = random.choice(candidates)
+            lines_remaining.remove(selected_line)
+
+            # Record cell that was flashed by line
+            for cell_name in selected_line['names']:
+                last_flash[cell_name] = flash_index 
+
+            flash_order.append(selected_line)
+            flash_index += 1
+
+    return flash_order
