@@ -61,6 +61,7 @@ def populate_cells(window):
     """
     Mapping of name to TextSim per every non-empty cell, 
     """
+
     n_rows, n_cols = len(GRID), len(GRID[0])
     cells = {}
 
@@ -88,6 +89,7 @@ def create_lines(matrix):
         - label: readable version of code
         - names: non-empty cell name on line
     """
+
     lines = []
 
     for r_index, row in enumerate(matrix):
@@ -125,6 +127,7 @@ def permutation(flashing_lines, repetition_count: int = REPETITION_COUNT, minimu
     """
     pseudo-random order, 6 intervening flashes before same cell flashes again
     """
+
     flash_order = []
     last_flash = {} # cell name is most recent flash
     flash_index = 0 # count of flashes
@@ -151,7 +154,7 @@ def permutation(flashing_lines, repetition_count: int = REPETITION_COUNT, minimu
                 if is_eligible:
                     candidates.append(line)
 
-            # Safety check, if for example one line left that has < min gap, flash to gracefully terminate
+            # Safety check, if one line left that has < min gap, flash to gracefully terminate
             if not candidates:
                 candidates = lines_remaining
 
@@ -166,3 +169,42 @@ def permutation(flashing_lines, repetition_count: int = REPETITION_COUNT, minimu
             flash_index += 1
 
     return flash_order
+
+
+# -- Speller Logic
+def apply_cell(result, cell):
+    """
+    Apply cell choice to result
+    """
+
+    if cell == 'SPC':
+        return result + ' '
+    elif cell == 'DELC':
+        return result[:-1]
+    elif cell == 'DELW':
+        # find last word by splitting spacing, then return all others
+        words = result.split(' ')
+        return ' '.join(words[:-1])
+    elif len(cell) == 1: 
+        return result + cell # add char
+    return result # TODO: END/Prediction Cells
+
+
+def show_predictions(cells, predictions: list[tuple[str, int]]):
+    """
+    P1-3 shows top 3 remaining candidates if TOP is triggered
+    predictions = [("hello", 0.4), ("i", 0.2), ...]
+    """
+
+    # Assuming in descending order?
+    if predictions and predictions[0][1] >= CONFIDENCE_THRESHOLD:
+        top = predictions[0][0]
+        candidates = [word for word, confidence_score in predictions[1:4]] # top triggered, so P1-3 takes 2nd to 4th pred.
+    else:
+        top = ''
+        candidates = [word for word, confidence_score in predictions[:3]] # top not triggered, so P1-3 takes 1st to 3rd pred.
+
+    candidates += [''] * (3 - len(candidates)) # fill with empty for non-predictions
+
+    for name, word in zip(PREDICTION_CELLS, [top] + candidates): # pair TOP, P1-3 to word predictions
+        cells[name].text = word # TextStim obj.
