@@ -2,7 +2,8 @@ from psychopy import core, visual, event
 import csv
 import random
 import time # TODO: or use monitor frames?
-
+import tempfile
+from pathlib import Path
 
 """
 Design of In-Matrix Grid:
@@ -126,6 +127,7 @@ def create_lines(matrix):
 def permutation(flashing_lines, repetition_count: int = REPETITION_COUNT, minimum_gap: int = 6):
     """
     pseudo-random order, 6 intervening flashes before same cell flashes again
+    TODO: Fix block bug
     """
 
     flash_order = []
@@ -172,6 +174,10 @@ def permutation(flashing_lines, repetition_count: int = REPETITION_COUNT, minimu
 
 
 # -- Speller Logic
+def char_to_cell(char):
+    char.upper()
+
+
 def apply_cell(result, cell):
     """
     Apply cell choice to result
@@ -182,12 +188,19 @@ def apply_cell(result, cell):
     elif cell == 'DELC':
         return result[:-1]
     elif cell == 'DELW':
-        # find last word by splitting spacing, then return all others
-        words = result.split(' ')
-        return ' '.join(words[:-1])
+        # find last word by removing trailing spaces, splitting spacing, then return all others
+        words = result.rstrip().split(' ')
+        return ' '.join(words[:-1]) + " " if len(words) > 1 else "" # automatically add a space after word removal to save SPC time
     elif len(cell) == 1: 
         return result + cell # add char
     return result # TODO: END/Prediction Cells
+
+
+def make_predictions(result):
+    """
+    Apply cost-minisation algorithm, without EEG data stream for now
+    """
+    pass
 
 
 def show_predictions(cells, predictions: list[tuple[str, int]]):
@@ -208,3 +221,40 @@ def show_predictions(cells, predictions: list[tuple[str, int]]):
 
     for name, word in zip(PREDICTION_CELLS, [top] + candidates): # pair TOP, P1-3 to word predictions
         cells[name].text = word # TextStim obj.
+
+
+def decode_cell(target):
+    """
+    Using EEG
+    """
+    pass
+
+
+# -- Timing/Logging
+def send_trigger(code):
+    pass
+
+
+def log_code(log, frame_count, code, **info):
+    """
+    Any extra detail passed packed into info dict
+    """
+    send_trigger(code)
+    log.append(dict(frame_count = frame_count, code = code, **info))
+
+
+def save_logs(log, path):
+    if not log:
+        return     
+
+    fields = ["text", "char", "char_seq_index", "target", "grid_pos", "is_target"]
+    log_path = Path(path)
+    log_path.mkdir(parents=True, exist_ok = True)
+
+    try:
+        with open(log_path, "w", newline="", encoding="utf-8") as file:
+            writer = csv.DictWriter(file, fieldnames=fields, restval=True) # empty if missing field
+            writer.writeheader()
+            writer.writerows(log)
+    except (OSError, csv.Error) as e: # OSError is equil. to IOError
+        raise RuntimeError(f"Failed to save log to {log_path}: {e}") from e # from e to show cause and not generic message
