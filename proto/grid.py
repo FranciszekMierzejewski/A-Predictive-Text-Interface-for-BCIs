@@ -75,3 +75,78 @@ def repetitions(lines: list[Line], max_repetitions = settings.MAX_REPETITIONS):
         previous_last = block[-1]
 
         yield block # generate a repetition, wait until another request via next(generator)
+
+
+# -- Text
+def last_word(result_text: str) -> str:
+    # Split currently typed text from the right, with a space seperator, splitting at most once to get latest word being typed
+    return result_text.rsplit(" ", 1)[-1] # ['original words', 'currently_typed_word']
+
+
+def delete_last_word(result_text: str) -> str:
+    words = result_text.rstrip().split(" ") # Remove whitespace from right
+    return " ".join(words[:-1]) + " " if len(words) > 1 else " " # automatically add a space after word removal to save SPC time
+
+
+def apply_cell(result_text: str, cell: str, shown: dict[str, str]) -> tuple[str, bool]:
+    """
+    Apply cell selection to result text. Returns lowercase text result and finished state tuple
+    """
+    shown = shown or {}
+
+    if cell == "SPC":
+        return result_text + ' ', False
+    elif cell == "DELC":
+        return result_text[:-1], False
+    elif cell == "DELW":
+        return delete_last_word(result_text), False
+    elif cell == "END":
+        return result_text, True
+    elif cell in PREDICTION_CELLS:
+        word = shown.get(cell, "")
+
+        if not word:
+            return result_text, False
+
+        return result_text[: len(result_text) - len(last_word(result_text))] + word + " ", False # keep everything up to currently written word, then replace with prediction
+    elif len(cell) == 1: 
+        return result_text + cell.lower(), False # manually entered letter
+    return result_text, False # fallback, if unknown cmd ignore
+
+
+def show_predictions(ranked_predictions: list[tuple[str, float]], threshold: float = settings.CONFIDENCE_THRESHOLD) -> dict[str, str]:
+    shown = {cell: "" for cell in PREDICTION_CELLS}
+
+    if not ranked_predictions:
+        return shown
+    elif ranked_predictions[0][1] >= threshold: # if over threshold, add TOP prediction
+        shown["TOP"] = ranked_predictions[0][1]
+        other_predictions = ranked_predictions[1:4]
+    else:
+        other_predictions = ranked_predictions[:3]
+
+    for cell, (word, probability) in zip((PREDICTION_CELLS[1:4]), other_predictions):
+        shown[cell] = word
+
+    return shown
+
+
+def best_selection(target: str, result_text: str, shown: dict[str, str], use_predictions: bool = True) -> str:
+    """
+    Remember trigated confidence, means using predictions may not be possible. Finds optimal selection
+    """
+
+    if result_text == target:
+        return "END"
+    
+    if not target.startswith(result_text):
+        if result_text.rstrip() == target: # in instance where user selections a prediction, we have an extra space at end, so remove
+            return "END" # match
+
+        # TODO: create a DELW optimisation algorithm.
+        # e.g. when comparing target and result, if:
+        #   a single character wrong at start, then saves time to use DELW than repeatedly DELC
+        #   if character is wrong second-to-last, then using DELC twice may save time over using DELW once and retyping everything again.
+        # need to consider multiple wrong characters, and for cases with use prediction flag on and off.
+
+        return "DELC" 
