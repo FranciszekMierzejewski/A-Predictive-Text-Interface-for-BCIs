@@ -1,6 +1,8 @@
 import random
-from dataclasses import dataclass
 import settings 
+
+from dataclasses import dataclass
+from collections import deque
 
 GRID = [
     ["TOP", "A", "B", "C", "D", "E"],
@@ -131,22 +133,89 @@ def show_predictions(ranked_predictions: list[tuple[str, float]], threshold: flo
     return shown
 
 
+def _optimal_deletion(target: str, result_text: str) -> tuple[int, str]:
+    """
+    Using BFS to find optimal deletion, assuming each deletion costs 1, retyping each character costs 1
+    
+    """
+    best_key = (float("inf"), float("inf")) # ()
+    best_action = "DELC" # default
+    visited = {result_text}
+    queue = deque([(result_text, 0, None)]) # (current_text after deletions, cost of deletions, first action taken)
+
+    while queue: # explores every reachable state until empty
+        current_text, cost, first_action = queue.popleft() # take oldest state from queue
+
+        if first_action is not None and target.startswith(current_text): # check if current word is a prefix of target, and deletion performed
+            key = (cost + len(target) - len(current_text), cost) # original cost + additional characters typed
+
+            if key < best_key: # compares tuple lexicographically, prioritises least total actions, least deletions if tie
+                best_key, best_action = key, first_action # we care about first action only
+            continue # exploring further deletions from current state is pointless, given deletion only increases cost
+
+        for action in ("DELC", "DELW"): # explores each deletion action from current state
+            next_text, finished_state = apply_cell(current_text, action, {})
+
+            if next_text not in visited: # explores unique states only
+                visited.add(next_text) # add to visited
+                queue.append((next_text, cost + 1, first_action or action)) 
+
+    return int(best_key[0]), best_action # returns minimum total cost with best action
+
+
+def _optimal_prediction(target: str, result_text: str, shown: dict[str, str]):
+    """
+    Cheapest valid prediction from current state.
+    """
+    start_index_last_word = len(result_text) - len(last_word(result_text))
+
+    if not target.startswith(result_text[:start_index_last_word]): # if current text is not a prefix of target, prediction cannot fix it
+        return None
+
+    best_prediction = None
+
+    for cell in PREDICTION_CELLS:
+        word = shown.get(cell, "") # get prediction
+
+        if not word:
+            continue
+
+        new_word = result_text[:start_index_last_word] + word.lower() + " " # Prediction completes word and adds space
+
+        if target.startswith(new_word) or new_word.rstrip() == target: # verify prefix match
+            total_cost = 1 + max(0, len(target) - len(new_word)) # update total cost, which includes distance away from target
+
+            if best_prediction is None or total_cost < best_prediction[0]: # update least cost
+                best_prediction = (total_cost, cell)
+
+    return best_prediction # (total cost, cell)
+
+
 def best_selection(target: str, result_text: str, shown: dict[str, str], use_predictions: bool = True) -> str:
     """
     Remember trigated confidence, means using predictions may not be possible. Finds optimal selection
     """
 
-    if result_text == target:
+    target, result_text = target.lower(), result_text.lower()
+
+    if result_text == target or result_text.rstrip() == target: # target met
         return "END"
-    
-    if not target.startswith(result_text):
-        if result_text.rstrip() == target: # in instance where user selections a prediction, we have an extra space at end, so remove
-            return "END" # match
 
-        # TODO: create a DELW optimisation algorithm.
-        # e.g. when comparing target and result, if:
-        #   a single character wrong at start, then saves time to use DELW than repeatedly DELC
-        #   if character is wrong second-to-last, then using DELC twice may save time over using DELW once and retyping everything again.
-        # need to consider multiple wrong characters, and for cases with use prediction flag on and off.
 
-        return "DELC" 
+    prediction = _optimal_prediction(target, result_text, shown or {}) if use_predictions else None # if predictions on, find optimal
+
+    if target.startswith(result_text): # check prefix
+        character_typing_cost = len(target) - len(result_text) # cost of manual typing
+
+        if prediction and prediction[0] < character_typing_cost: # compare prediction for None edgecase to not raise TypeError when trying to access index 0, TODO decide if <=, i.e. favour predictions?
+            return prediction[1]
+
+        next_character = target[len(result_text)]
+        return "SPC" if next_character == " " else next_character.upper() # return next manual char, no deleting if prior chars correct
+
+    deletion_minimum_cost, deletion_action = _optimal_deletion(target, result_text)
+
+    if prediction and prediction[0] <= deletion_minimum_cost(target, result_text):
+        return prediction[1]
+
+    return deletion_action
